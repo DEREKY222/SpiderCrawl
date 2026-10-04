@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.pyc
+
+# Crawl output and downloaded data
+results.*
+*.json
+*.jsonl
+*.csv
+
+# Local backup of the v2 live page (kept in git history on the v2 branch)
+spider_live.original.html
