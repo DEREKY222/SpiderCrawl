@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Spider Live</title>
+<style>
+  :root {
+    --bg: #0b0f1a; --panel: #121829; --card: #0f1424; --line: #232c45;
+    --text: #e6e9f2; --muted: #8a93ab; --accent: #f2b84b; --ok: #4cd68a;
+    --err: #ff6b6b; --skip: #6b7390; --silk: #c9d3ff;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 14px/1.45 "Segoe UI", system-ui, sans-serif; }
+  .app { display: grid; grid-template-columns: 1fr 380px; height: 100vh; }
+  #stage { position: relative; overflow: hidden;
+    background: radial-gradient(ellipse at center, #151d34 0%, var(--bg) 70%); }
+  canvas { display: block; width: 100%; height: 100%; }
+  aside { background: var(--panel); border-left: 1px solid var(--line);
+    display: flex; flex-direction: column; min-height: 0; }
+  header { padding: 16px 18px 12px; border-bottom: 1px solid var(--line); }
+  h1 { font-size: 16px; margin: 0 0 4px; display: flex; align-items: center; gap: 8px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent);
+    box-shadow: 0 0 10px var(--accent); animation: blink 1s infinite; flex: none; }
+  .done .dot { background: var(--ok); box-shadow: 0 0 10px var(--ok); animation: none; }
+  @keyframes blink { 50% { opacity: .3; } }
+  .now { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;
+    padding: 12px 18px; border-bottom: 1px solid var(--line); }
+  .stat b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }
+  .stat span { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+  #feed { overflow-y: auto; padding: 10px 12px; flex: 1; min-height: 0; }
+  .card { border: 1px solid var(--line); border-left: 3px solid var(--ok); border-radius: 8px;
+    padding: 9px 12px; margin-bottom: 8px; background: var(--card); animation: in .45s ease-out; }
+  .card.err { border-left-color: var(--err); }
+  .card.skip { border-left-color: var(--skip); opacity: .75; }
+  @keyframes in { from { opacity: 0; transform: translateY(-8px); } }
+  .card .t { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card .u { color: var(--muted); font-size: 12px; word-break: break-all; }
+  .card .m { font-size: 12px; color: var(--muted); margin-top: 3px; }
+  .card .f { font-size: 12px; margin-top: 5px; overflow-wrap: anywhere; }
+  .card .f i { color: var(--accent); font-style: normal; }
+  .tip { position: absolute; pointer-events: none; background: #0f1424f0; border: 1px solid var(--line);
+    border-radius: 6px; padding: 8px 10px; font-size: 12px; max-width: 340px; display: none; }
+  .tip b { display: block; margin-bottom: 2px; }
+  .tip span { color: var(--muted); word-break: break-all; }
+  .legend { position: absolute; left: 14px; bottom: 12px; font-size: 12px; color: var(--muted);
+    display: flex; gap: 14px; flex-wrap: wrap; }
+  .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
+  .empty { color: var(--muted); font-size: 13px; padding: 12px 6px; }
+  @media (max-width: 800px) {
+    .app { grid-template-columns: 1fr; grid-template-rows: 55vh 45vh; }
+    aside { border-left: 0; border-top: 1px solid var(--line); }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="stage">
+    <canvas id="c"></canvas>
+    <div class="tip" id="tip"></div>
+    <div class="legend">
+      <span><i style="background:var(--ok)"></i>extracted</span>
+      <span><i style="background:var(--accent)"></i>fetching</span>
+      <span><i style="border:1px solid var(--silk)"></i>queued</span>
+      <span><i style="background:var(--err)"></i>error</span>
+      <span><i style="background:var(--skip)"></i>skipped</span>
+    </div>
+  </div>
+  <aside id="side">
+    <header>
+      <h1><span class="dot"></span><span id="status">Spider is crawling…</span></h1>
+      <div class="now" id="now">Waiting for the crawler…</div>
+    </header>
+    <div class="stats">
+      <div class="stat"><b id="sPages">0</b><span>Pages</span></div>
+      <div class="stat"><b id="sQueued">0</b><span>Queued</span></div>
+      <div class="stat"><b id="sErrors">0</b><span>Errors</span></div>
+      <div class="stat"><b id="sTime">0s</b><span>Time</span></div>
+    </div>
+    <div id="feed"><div class="empty">Extracted page data will appear here.</div></div>
+  </aside>
+</div>
+<script>
+(() => {
+  const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+  const $ = id => document.getElementById(id);
+  const css = getComputedStyle(document.documentElement);
+  const C = k => css.getPropertyValue('--' + k).trim();
+  const COL = { ok: C('ok'), err: C('err'), accent: C('accent'), skip: C('skip'), silk: C('silk'), muted: C('muted') };
+
+  let W = 0, H = 0, DPR = 1;
+  function resize() {
+    const r = cv.getBoundingClientRect();
+    DPR = window.devicePixelRatio || 1; W = r.width; H = r.height;
+    cv.width = W * DPR; cv.height = H * DPR;
+  }
+  addEventListener('resize', resize); resize();
+
+  // ---------- state ----------
+  const nodes = new Map(), list = [], edges = [], recent = [];
+  const events = [];
+  const stats = { pages: 0, errors: 0 };
+  let t0 = null, tEnd = null, finished = false, lastId = -1;
+  const cam = { x: 0, y: 0, s: 1.6 };
+  const spider = { x: 0, y: 0, ang: -Math.PI / 2, phase: 0, path: [], at: null, wait: 0, scanning: null };
+
+  // ---------- stream ----------
+  const es = new EventSource('/events');
+  es.onmessage = m => {
+    const ev = JSON.parse(m.data);
+    if (ev.id <= lastId) return;
+    lastId = ev.id;
+    events.push(ev);
+    if (t0 === null) t0 = performance.now();
+  };
+
+  // ---------- graph ----------
+  function addNode(url, parentUrl, depth) {
+    if (nodes.has(url)) return nodes.get(url);
+    const p = parentUrl ? nodes.get(parentUrl) : null;
+    const a = Math.random() * Math.PI * 2, r = p ? 30 + Math.random() * 30 : (list.length ? 120 : 0);
+    const n = { url, parent: p, depth, x: (p ? p.x : 0) + Math.cos(a) * r, y: (p ? p.y : 0) + Math.sin(a) * r,
+      vx: 0, vy: 0, state: 'queued', born: performance.now(), pulse: 0, data: null, edge: null };
+    nodes.set(url, n); list.push(n);
+    if (p) { n.edge = { a: p, b: n, walked: false }; edges.push(n.edge); }
+    return n;
+  }
+
+  function route(from, to) {
+    if (!from) return [to];
+    const anc = new Set(); for (let a = to; a; a = a.parent) anc.add(a);
+    const up = []; let c = from;
+    while (c && !anc.has(c)) { c = c.parent; if (c) up.push(c); }
+    if (!c) return [to];
+    const down = []; for (let a = to; a && a !== c; a = a.parent) down.unshift(a);
+    return up.concat(down);
+  }
+
+  const backlog = () => { let b = 0; for (const e of events) if (e.type === 'fetch') b++; return b; };
+
+  // ---------- event handling (sequential, waits for the spider) ----------
+  function pump(now) {
+    while (events.length) {
+      if (spider.path.length || spider.wait > now) return;
+      handle(events.shift(), now);
+    }
+  }
+
+  function handle(ev, now) {
+    switch (ev.type) {
+      case 'queue': addNode(ev.url, ev.parent, ev.depth); break;
+      case 'fetch': {
+        const n = addNode(ev.url, ev.parent, ev.depth);
+        n.state = 'fetching';
+        $('now').textContent = 'Crawling → ' + ev.url;
+        if (!spider.at) { spider.at = n; spider.x = n.x; spider.y = n.y; }
+        else if (spider.at !== n) spider.path = route(spider.at, n);
+        break;
+      }
+      case 'visit': {
+        const n = addNode(ev.url, null, ev.depth);
+        n.state = ev.status >= 400 ? 'error' : 'done';
+        n.data = ev; n.pulse = now;
+        stats.pages++; if (ev.status >= 400) stats.errors++;
+        recent.push(n); if (recent.length > 7) recent.shift();
+        spider.scanning = n; spider.wait = now + 450 / (1 + backlog() * 0.8);
+        addCard(ev, ev.status >= 400 ? 'err' : '');
+        break;
+      }
+      case 'error': {
+        const n = addNode(ev.url, null, 0); n.state = 'error'; n.data = ev; n.pulse = now;
+        stats.errors++; addCard(ev, 'err'); break;
+      }
+      case 'skip': {
+        const n = addNode(ev.url, null, 0); n.state = 'skip'; n.data = ev;
+        addCard(ev, 'skip'); break;
+      }
+      case 'done':
+        finished = true; tEnd = performance.now();
+        $('side').classList.add('done');
+        $('status').textContent = ev.stopped ? 'Stopped' : 'Crawl complete';
+        $('now').textContent = `${ev.pages} pages saved to ${ev.out}`;
+        es.close();
+        break;
+    }
+  }
+
+  // ---------- feed ----------
+  const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const clip = (s, n) => (s = String(s ?? '')).length > n ? s.slice(0, n) + '…' : s;
+  function addCard(ev, kind) {
+    const feed = $('feed');
+    const empty = feed.querySelector('.empty'); if (empty) empty.remove();
+    const d = document.createElement('div');
+    d.className = 'card ' + kind;
+    let html;
+    if (ev.type === 'visit') {
+      html = `<div class="t">${esc(ev.title || '(no title)')}</div><div class="u">${esc(ev.url)}</div>
+        <div class="m">${ev.status} · ${ev.word_count} words · ${ev.links} links · ${ev.images} images · depth ${ev.depth}</div>`;
+      if (ev.h1 && ev.h1.length && ev.h1[0] !== ev.title) html += `<div class="f"><i>h1</i>: ${esc(clip(ev.h1.join(' / '), 140))}</div>`;
+      if (ev.description) html += `<div class="f"><i>description</i>: ${esc(clip(ev.description, 160))}</div>`;
+      for (const [k, v] of Object.entries(ev.fields || {})) {
+        const val = Array.isArray(v) ? `${v.length} found: ${v.slice(0, 3).join(' · ')}` : v;
+        html += `<div class="f"><i>${esc(k)}</i>: ${esc(clip(val, 220))}</div>`;
+      }
+    } else {
+      html = `<div class="t">${ev.type === 'error' ? 'Error' : 'Skipped'}</div><div class="u">${esc(ev.url)}</div>
+        <div class="m">${esc(clip(ev.error || ev.reason, 160))}</div>`;
+    }
+    d.innerHTML = html;
+    feed.prepend(d);
+    while (feed.children.length > 150) feed.lastChild.remove();
+  }
+
+  // ---------- physics & camera ----------
+  function physics() {
+    const k = list.length;
+    for (let i = 0; i < k; i++) {
+      const a = list[i];
+      for (let j = i + 1; j < k; j++) {
+        const b = list[j];
+        let dx = a.x - b.x, dy = a.y - b.y; const d2 = dx * dx + dy * dy + 0.01;
+        if (d2 > 90000) continue;
+        const d = Math.sqrt(d2), f = 700 / d2; dx /= d; dy /= d;
+        a.vx += dx * f; a.vy += dy * f; b.vx -= dx * f; b.vy -= dy * f;
+      }
+    }
+    for (const e of edges) {
+      let dx = e.b.x - e.a.x, dy = e.b.y - e.a.y; const d = Math.hypot(dx, dy) || 1;
+      const L = e.b.state === 'queued' ? 42 : 85, f = (d - L) * 0.02; dx /= d; dy /= d;
+      e.a.vx += dx * f; e.a.vy += dy * f; e.b.vx -= dx * f; e.b.vy -= dy * f;
+    }
+    for (const n of list) {
+      n.vx -= n.x * 0.0006; n.vy -= n.y * 0.0006;
+      n.vx *= 0.8; n.vy *= 0.8;
+      const v = Math.hypot(n.vx, n.vy); if (v > 8) { n.vx *= 8 / v; n.vy *= 8 / v; }
+      n.x += n.vx; n.y += n.vy;
+    }
+  }
+
+  function updateCamera() {
+    if (!list.length) return;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const n of list) { x0 = Math.min(x0, n.x); y0 = Math.min(y0, n.y); x1 = Math.max(x1, n.x); y1 = Math.max(y1, n.y); }
+    const s = Math.max(0.15, Math.min(2.2, (W - 140) / Math.max(x1 - x0, 1), (H - 140) / Math.max(y1 - y0, 1)));
+    cam.x += ((x0 + x1) / 2 - cam.x) * 0.05; cam.y += ((y0 + y1) / 2 - cam.y) * 0.05; cam.s += (s - cam.s) * 0.04;
+  }
+  const sx = x => (x - cam.x) * cam.s + W / 2, sy = y => (y - cam.y) * cam.s + H / 2;
+
+  // ---------- spider movement ----------
+  function moveSpider(dt) {
+    if (spider.path.length) {
+      const t = spider.path[0], dx = t.x - spider.x, dy = t.y - spider.y, d = Math.hypot(dx, dy);
+      const bl = backlog();
+      const step = 190 * (1 + bl * 0.6) * dt / cam.s;
+      let da = Math.atan2(dy, dx) - spider.ang; da = Math.atan2(Math.sin(da), Math.cos(da));
+      spider.ang += da * 0.25;
+      spider.phase += dt * 20 * (1 + bl * 0.3);
+      if (d <= step) {
+        const prev = spider.at;
+        if (prev && t.parent === prev && t.edge) t.edge.walked = true;
+        else if (prev && prev.parent === t && prev.edge) prev.edge.walked = true;
+        spider.at = t; spider.x = t.x; spider.y = t.y; spider.path.shift();
+      } else { spider.x += dx / d * step; spider.y += dy / d * step; }
+    } else if (spider.at) {
+      spider.x = spider.at.x; spider.y = spider.at.y; spider.phase += dt * 3;
+    }
+  }
+
+  // ---------- drawing ----------
+  function nodeRadius(n) {
+    if (n.state === 'queued') return 2.5;
+    if (n.state === 'fetching') return 6;
+    if (n.state === 'done') return 4 + Math.min(6, Math.log10((n.data?.word_count || 0) + 1) * 2);
+    return 4.5;
+  }
+  const nodeColor = n => ({ done: COL.ok, fetching: COL.accent, error: COL.err, skip: COL.skip }[n.state] || COL.silk);
+
+  function drawSpider(x, y, ang, phase, moving, glow) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(ang); ctx.scale(1.15, 1.15);
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    for (const side of [-1, 1]) {
+      for (let i = 0; i < 4; i++) {
+        const swing = moving ? Math.sin(phase + i * Math.PI / 2 + (side > 0 ? Math.PI : 0)) * 0.32
+                             : Math.sin(phase * 0.6 + i * 1.7) * 0.04;
+        const th = side * (0.55 + i * 0.55 + swing);
+        const ax = 3 - i * 1.6, ay = side * 1.5;
+        const kx = ax + Math.cos(th) * 8, ky = ay + Math.sin(th) * 8;
+        const fth = th + side * (i < 2 ? -0.65 : 0.65);
+        const fx = kx + Math.cos(fth) * 9, fy = ky + Math.sin(fth) * 9;
+        ctx.strokeStyle = '#d9d4ff'; ctx.lineWidth = 1.7;
+        ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(kx, ky); ctx.lineTo(fx, fy); ctx.stroke();
+      }
+    }
+    if (glow) { ctx.shadowColor = COL.accent; ctx.shadowBlur = 16; }
+    ctx.fillStyle = '#2b2442'; ctx.strokeStyle = '#d9d4ff'; ctx.lineWidth = 1.3;
+    ctx.beginPath(); ctx.ellipse(-7, 0, 7.5, 5.8, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = COL.accent;
+    ctx.beginPath(); ctx.moveTo(-10, 0); ctx.lineTo(-7, -2.2); ctx.lineTo(-4, 0); ctx.lineTo(-7, 2.2); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#2b2442';
+    ctx.beginPath(); ctx.arc(2.5, 0, 4.2, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#ff5a5a';
+    for (const e of [-1.5, 1.5]) { ctx.beginPath(); ctx.arc(5.4, e, 0.95, 0, Math.PI * 2); ctx.fill(); }
+    ctx.restore();
+  }
+
+  function draw(now) {
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+
+    // threads
+    for (const e of edges) {
+      const t = Math.min(1, (now - e.b.born) / 450);
+      const ax = sx(e.a.x), ay = sy(e.a.y), bx = sx(e.a.x + (e.b.x - e.a.x) * t), by = sy(e.a.y + (e.b.y - e.a.y) * t);
+      ctx.strokeStyle = COL.silk;
+      ctx.globalAlpha = e.walked ? 0.6 : e.b.state === 'queued' ? 0.13 : 0.3;
+      ctx.lineWidth = e.walked ? 1.4 : 1;
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+
+    // dragline behind a moving spider
+    if (spider.path.length && spider.at) {
+      ctx.strokeStyle = COL.silk; ctx.globalAlpha = 0.85; ctx.lineWidth = 1.3;
+      ctx.beginPath(); ctx.moveTo(sx(spider.at.x), sy(spider.at.y)); ctx.lineTo(sx(spider.x), sy(spider.y)); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
+    // nodes
+    for (const n of list) {
+      if (n.parent && now - n.born < 450) continue;
+      const x = sx(n.x), y = sy(n.y), r = nodeRadius(n), c = nodeColor(n);
+      if (n.state === 'fetching') {
+        const g = 0.5 + 0.5 * Math.sin(now / 160);
+        ctx.fillStyle = c; ctx.globalAlpha = 0.18 + 0.2 * g;
+        ctx.beginPath(); ctx.arc(x, y, r + 6 + 4 * g, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
+      }
+      if (n.pulse && now - n.pulse < 1000) {
+        const a = (now - n.pulse) / 1000;
+        ctx.strokeStyle = c; ctx.globalAlpha = 1 - a; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(x, y, r + a * 26, 0, Math.PI * 2); ctx.stroke(); ctx.globalAlpha = 1;
+      }
+      if (n.state === 'queued') {
+        ctx.strokeStyle = COL.silk; ctx.globalAlpha = 0.55; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke(); ctx.globalAlpha = 1;
+      } else {
+        ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+
+    // scanning ring while extracting
+    if (spider.wait > now && spider.scanning) {
+      const n = spider.scanning, x = sx(n.x), y = sy(n.y);
+      ctx.save(); ctx.strokeStyle = COL.accent; ctx.lineWidth = 1.5; ctx.setLineDash([4, 5]);
+      ctx.lineDashOffset = -now / 25;
+      ctx.beginPath(); ctx.arc(x, y, 22, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+    }
+
+    // labels for the latest pages and the hovered node
+    ctx.font = '11px "Segoe UI", system-ui, sans-serif'; ctx.textBaseline = 'middle';
+    const labelled = new Set(recent); if (hover) labelled.add(hover);
+    for (const n of labelled) {
+      if (!n.data) continue;
+      const text = clip(n.data.title || n.url, 34), x = sx(n.x) + nodeRadius(n) + 6, y = sy(n.y);
+      ctx.fillStyle = 'rgba(11,15,26,.75)';
+      ctx.fillRect(x - 3, y - 8, ctx.measureText(text).width + 6, 16);
+      ctx.fillStyle = n === hover ? '#fff' : COL.muted; ctx.fillText(text, x, y);
+    }
+
+    if (spider.at) drawSpider(sx(spider.x), sy(spider.y), spider.ang, spider.phase, spider.path.length > 0, spider.wait > now);
+  }
+
+  // ---------- hover tooltip ----------
+  let hover = null;
+  const tip = $('tip');
+  cv.addEventListener('mousemove', e => {
+    const r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+    hover = null; let best = 144;
+    for (const n of list) { const d = (sx(n.x) - mx) ** 2 + (sy(n.y) - my) ** 2; if (d < best) { best = d; hover = n; } }
+    if (!hover) { tip.style.display = 'none'; return; }
+    const d = hover.data;
+    tip.innerHTML = `<b>${esc(d?.title || hover.state)}</b><span>${esc(hover.url)}</span>` +
+      (d && d.type === 'visit' ? `<br>${d.status} · ${d.word_count} words · ${d.links} links · depth ${d.depth}` : '') +
+      (d && (d.error || d.reason) ? `<br>${esc(clip(d.error || d.reason, 120))}` : '');
+    tip.style.display = 'block';
+    tip.style.left = Math.min(mx + 14, W - tip.offsetWidth - 8) + 'px';
+    tip.style.top = Math.min(my + 14, H - tip.offsetHeight - 8) + 'px';
+  });
+  cv.addEventListener('mouseleave', () => { hover = null; tip.style.display = 'none'; });
+
+  // ---------- loop ----------
+  let last = performance.now();
+  function step(now) {
+    const dt = Math.min(0.1, (now - last) / 1000); last = now;
+    pump(now); physics(); updateCamera(); moveSpider(dt); draw(now);
+    let q = 0; for (const n of list) if (n.state === 'queued') q++;
+    $('sPages').textContent = stats.pages; $('sQueued').textContent = q; $('sErrors').textContent = stats.errors;
+    if (t0 !== null) $('sTime').textContent = Math.round(((tEnd ?? now) - t0) / 1000) + 's';
+  }
+  function raf(now) { step(now); requestAnimationFrame(raf); }
+  requestAnimationFrame(raf);
+  // Fallback when the browser throttles animation frames (e.g. background tab)
+  setInterval(() => { const now = performance.now(); if (now - last > 200) step(now); }, 50);
+})();
+</script>
+</body>
+</html>

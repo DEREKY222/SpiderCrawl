@@ -6,6 +6,7 @@ Usage examples:
     python spider.py https://quotes.toscrape.com --max-pages 50 --depth 3 --out results.json
     python spider.py https://example.com --select "price=.product .price" --select "name=h1"
     python spider.py https://example.com --format csv --out pages.csv
+    python spider.py https://quotes.toscrape.com --live      # animated view in your browser
 
 What it does:
   * Breadth-first crawl starting from one or more URLs
@@ -16,6 +17,8 @@ What it does:
     h1/h2 headings, visible text snippet, word count, links, images,
     plus any custom CSS-selector fields you pass with --select
   * Writes JSON (default), JSONL, or CSV
+  * --live opens a browser page showing an animated spider crawling the
+    site in real time, with extracted data streaming into a side panel
 """
 
 import argparse
@@ -23,8 +26,12 @@ import csv
 import json
 import re
 import sys
+import threading
 import time
+import webbrowser
 from collections import deque
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import urljoin, urldefrag, urlparse
 from urllib.robotparser import RobotFileParser
 
@@ -66,6 +73,7 @@ class Spider:
         self.robots = {}
         self.seen = set()
         self.results = []
+        self.emit = lambda event: None  # replaced by the live view when --live is used
 
     # ---------- policy ----------
     def can_fetch(self, url):
@@ -137,14 +145,18 @@ class Spider:
 
     # ---------- main loop ----------
     def crawl(self):
-        queue = deque((u, 0) for u in self.start_urls)
+        queue = deque((u, 0, None) for u in self.start_urls)
         self.seen.update(self.start_urls)
+        for u in self.start_urls:
+            self.emit({"type": "queue", "url": u, "parent": None, "depth": 0})
 
         while queue and len(self.results) < self.max_pages:
-            url, depth = queue.popleft()
+            url, depth, parent = queue.popleft()
+            self.emit({"type": "fetch", "url": url, "parent": parent, "depth": depth})
 
             if not self.can_fetch(url):
                 print(f"[robots] skip {url}", file=sys.stderr)
+                self.emit({"type": "skip", "url": url, "reason": "blocked by robots.txt"})
                 continue
 
             try:
@@ -152,11 +164,13 @@ class Spider:
             except requests.RequestException as e:
                 print(f"[error] {url}: {e}", file=sys.stderr)
                 self.results.append({"url": url, "status": None, "error": str(e)})
+                self.emit({"type": "error", "url": url, "error": str(e)})
                 continue
 
             ctype = resp.headers.get("Content-Type", "")
             if "html" not in ctype:
                 print(f"[skip]  {url} ({ctype})", file=sys.stderr)
+                self.emit({"type": "skip", "url": url, "reason": ctype or "not HTML"})
                 continue
 
             record, links = self.extract(resp.url, resp)
@@ -164,16 +178,95 @@ class Spider:
             self.results.append(record)
             print(f"[{len(self.results):>4}] d={depth} {resp.status_code} {url} - {record['title'][:60]}",
                   file=sys.stderr)
+            self.emit({
+                "type": "visit",
+                "url": url,
+                "final_url": record["url"],
+                "status": record["status"],
+                "title": record["title"],
+                "description": record["description"],
+                "h1": record["h1"][:3],
+                "word_count": record["word_count"],
+                "links": len(record["links"]),
+                "images": len(record["images"]),
+                "depth": depth,
+                "fields": {name: record[name] for name in self.selectors},
+            })
 
             if depth < self.max_depth:
                 for link in links:
                     if link not in self.seen and self.should_follow(link):
                         self.seen.add(link)
-                        queue.append((link, depth + 1))
+                        queue.append((link, depth + 1, url))
+                        self.emit({"type": "queue", "url": link, "parent": url, "depth": depth + 1})
 
             time.sleep(self.delay)
 
         return self.results
+
+
+class LiveFeed:
+    """Thread-safe event log that browser clients stream from."""
+
+    def __init__(self):
+        self.events = []
+        self.cond = threading.Condition()
+
+    def push(self, event):
+        with self.cond:
+            event["id"] = len(self.events)
+            self.events.append(event)
+            self.cond.notify_all()
+
+    def wait_since(self, idx, timeout=15):
+        with self.cond:
+            self.cond.wait_for(lambda: len(self.events) > idx, timeout=timeout)
+            return self.events[idx:]
+
+
+def start_live_server(feed, port):
+    page = Path(__file__).with_name("spider_live.html").read_bytes()
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_GET(self):
+            if self.path == "/":
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(page)))
+                self.end_headers()
+                self.wfile.write(page)
+            elif self.path == "/events":
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.send_header("Cache-Control", "no-cache")
+                self.end_headers()
+                try:
+                    idx = int(self.headers.get("Last-Event-ID", -1)) + 1
+                except ValueError:
+                    idx = 0
+                try:
+                    while True:
+                        batch = feed.wait_since(idx)
+                        if batch:
+                            idx += len(batch)
+                            chunk = "".join(f"id: {e['id']}\ndata: {json.dumps(e, ensure_ascii=False)}\n\n"
+                                            for e in batch)
+                        else:
+                            chunk = ": ping\n\n"
+                        self.wfile.write(chunk.encode("utf-8"))
+                        self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+                    return
+            else:
+                self.send_error(404)
+
+    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    server.daemon_threads = True
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return f"http://127.0.0.1:{server.server_address[1]}/"
 
 
 def save(results, path, fmt):
@@ -222,6 +315,9 @@ def main():
     p.add_argument("--user-agent", default=DEFAULT_UA)
     p.add_argument("--format", choices=["json", "jsonl", "csv"], default="json")
     p.add_argument("--out", default=None, help="Output file (default results.<format>)")
+    p.add_argument("--live", action="store_true", help="Show an animated live view in your browser")
+    p.add_argument("--port", type=int, default=8765, help="Port for --live (default 8765)")
+    p.add_argument("--no-browser", action="store_true", help="With --live, don't auto-open the browser")
     args = p.parse_args()
 
     spider = Spider(
@@ -237,10 +333,36 @@ def main():
         timeout=args.timeout,
         user_agent=args.user_agent,
     )
-    results = spider.crawl()
     out = args.out or f"results.{args.format}"
+
+    if args.live:
+        feed = LiveFeed()
+        spider.emit = feed.push
+        url = start_live_server(feed, args.port)
+        print(f"Live view: {url}", file=sys.stderr)
+        if not args.no_browser:
+            webbrowser.open(url)
+        time.sleep(1.5)  # give the page a moment to connect before the spider sets off
+
+    stopped = False
+    try:
+        results = spider.crawl()
+    except KeyboardInterrupt:
+        stopped = True
+        results = spider.results
+        print("\nStopped by user - saving what was collected so far.", file=sys.stderr)
+
     save(results, out, args.format)
+    spider.emit({"type": "done", "pages": len(results), "out": out, "stopped": stopped})
     print(f"\nDone: {len(results)} pages -> {out}", file=sys.stderr)
+
+    if args.live:
+        print("Live view is still open. Press Ctrl+C to exit.", file=sys.stderr)
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            pass
 
 
 if __name__ == "__main__":

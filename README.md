@@ -1,12 +1,14 @@
 # Spider Crawler
 
-A polite web crawler that extracts page information.
+A polite web crawler that extracts page information, with an optional live
+animation of a spider crawling the site in your browser.
 
 ## Files
 
 | File | Purpose |
 |---|---|
 | `spider.py` | The crawler (run this) |
+| `spider_live.html` | The live animation page — keep it in the same folder as `spider.py` |
 | `requirements.txt` | Python packages needed |
 
 ## 1. One-time setup
@@ -56,6 +58,24 @@ To find a selector for a site: open the page in Chrome, right-click the item
 you want → **Inspect**, then right-click the highlighted HTML → **Copy → Copy selector**
 (or use its class, e.g. `.price`).
 
+## 3. Live animation
+
+Add `--live` to any command. A browser tab opens showing the spider walking
+across a web of pages while it crawls, with extracted data streaming into the
+side panel:
+
+```
+python spider.py https://quotes.toscrape.com --live --select "quote=.quote .text"
+```
+
+- If the browser doesn't open by itself, go to http://127.0.0.1:8765/
+- After the crawl finishes, the page stays open — press **Ctrl+C** in PowerShell to exit.
+- If port 8765 is busy, add `--port 8899` (and open http://127.0.0.1:8899/).
+- Hover over any dot to see that page's details.
+
+Colors: amber = fetching, green = extracted (bigger = more words),
+red = error, grey = skipped, hollow = waiting in queue.
+
 ## All options
 
 | Option | Default | Meaning |
@@ -70,6 +90,9 @@ you want → **Inspect**, then right-click the highlighted HTML → **Copy → C
 | `--ignore-robots` | off | Ignore robots.txt (only for sites you own) |
 | `--format` | json | `json`, `jsonl` or `csv` |
 | `--out FILE` | results.&lt;format&gt; | Output file name |
+| `--live` | off | Show the live animation |
+| `--port N` | 8765 | Port for the live view |
+| `--no-browser` | off | With `--live`, don't open the browser automatically |
 
 Press **Ctrl+C** at any time to stop a crawl early; whatever was collected is still saved.
 
