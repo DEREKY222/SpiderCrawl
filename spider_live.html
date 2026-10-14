@@ -4,82 +4,133 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Spider Live</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Alegreya:ital,wght@0,500;0,600;1,500&family=Alegreya+Sans:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #0b0f1a; --panel: #121829; --card: #0f1424; --line: #232c45;
-    --text: #e6e9f2; --muted: #8a93ab; --accent: #f2b84b; --ok: #4cd68a;
-    --err: #ff6b6b; --skip: #6b7390; --silk: #c9d3ff;
+    /* first light: an orb web at dawn */
+    --sky-top: #161b38; --sky-mid: #231f45; --horizon: #3b2f57;
+    --panel: #1a1f3d; --line: rgba(230, 227, 244, .09);
+    --text: #eceaf7; --muted: #a3a6c4; --faint: #6f7396;
+    --silk: #e6e3f4; --ok: #8fe3d1; --accent: #ffc46b;
+    --err: #ff7d8c; --skip: #7d81a0;
+    --serif: "Alegreya", Georgia, serif;
+    --sans: "Alegreya Sans", "Segoe UI", system-ui, sans-serif;
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
-    font: 14px/1.45 "Segoe UI", system-ui, sans-serif; }
-  .app { display: grid; grid-template-columns: 1fr 380px; height: 100vh; }
+  html, body { margin: 0; height: 100%; background: var(--sky-top); color: var(--text);
+    font: 15px/1.45 var(--sans); }
+  .app { display: grid; grid-template-columns: 1fr 400px; height: 100vh; }
+
   #stage { position: relative; overflow: hidden;
-    background: radial-gradient(ellipse at center, #151d34 0%, var(--bg) 70%); }
+    background:
+      radial-gradient(120% 55% at 50% 108%, rgba(255, 196, 107, .2), transparent 60%),
+      linear-gradient(180deg, var(--sky-top) 0%, var(--sky-mid) 58%, var(--horizon) 100%); }
   canvas { display: block; width: 100%; height: 100%; }
+
   aside { background: var(--panel); border-left: 1px solid var(--line);
     display: flex; flex-direction: column; min-height: 0; }
-  header { padding: 16px 18px 12px; border-bottom: 1px solid var(--line); }
-  h1 { font-size: 16px; margin: 0 0 4px; display: flex; align-items: center; gap: 8px; }
-  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent);
-    box-shadow: 0 0 10px var(--accent); animation: blink 1s infinite; flex: none; }
-  .done .dot { background: var(--ok); box-shadow: 0 0 10px var(--ok); animation: none; }
-  @keyframes blink { 50% { opacity: .3; } }
-  .now { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;
-    padding: 12px 18px; border-bottom: 1px solid var(--line); }
-  .stat b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }
-  .stat span { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
-  #feed { overflow-y: auto; padding: 10px 12px; flex: 1; min-height: 0; }
-  .card { border: 1px solid var(--line); border-left: 3px solid var(--ok); border-radius: 8px;
-    padding: 9px 12px; margin-bottom: 8px; background: var(--card); animation: in .45s ease-out; }
-  .card.err { border-left-color: var(--err); }
-  .card.skip { border-left-color: var(--skip); opacity: .75; }
-  @keyframes in { from { opacity: 0; transform: translateY(-8px); } }
-  .card .t { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .card .u { color: var(--muted); font-size: 12px; word-break: break-all; }
-  .card .m { font-size: 12px; color: var(--muted); margin-top: 3px; }
-  .card .f { font-size: 12px; margin-top: 5px; overflow-wrap: anywhere; }
-  .card .f i { color: var(--accent); font-style: normal; }
-  .tip { position: absolute; pointer-events: none; background: #0f1424f0; border: 1px solid var(--line);
-    border-radius: 6px; padding: 8px 10px; font-size: 12px; max-width: 340px; display: none; }
-  .tip b { display: block; margin-bottom: 2px; }
-  .tip span { color: var(--muted); word-break: break-all; }
-  .legend { position: absolute; left: 14px; bottom: 12px; font-size: 12px; color: var(--muted);
-    display: flex; gap: 14px; flex-wrap: wrap; }
-  .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
-  .empty { color: var(--muted); font-size: 13px; padding: 12px 6px; }
+
+  header { padding: 22px 24px 18px; }
+  h1 { font: 500 24px/1.15 var(--serif); margin: 0 0 6px; display: flex; align-items: center; gap: 10px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; flex: none;
+    background: radial-gradient(circle at 35% 30%, #fff 0 18%, var(--accent) 45%);
+    box-shadow: 0 0 12px rgba(255, 196, 107, .7); animation: breathe 1.6s ease-in-out infinite; }
+  .done .dot { background: radial-gradient(circle at 35% 30%, #fff 0 18%, var(--ok) 45%);
+    box-shadow: 0 0 12px rgba(143, 227, 209, .6); animation: none; }
+  @keyframes breathe { 50% { opacity: .35; transform: scale(.8); } }
+  .now { color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+    padding: 0 24px 18px; border-bottom: 1px solid var(--line); }
+  .stat b { display: block; font: 600 26px/1.1 var(--serif); font-variant-numeric: lining-nums tabular-nums; }
+  .stat span { font-size: 13px; color: var(--muted); }
+  .stat.err b { color: var(--err); }
+  .stat.err.zero b { color: var(--text); }
+
+  #feed { overflow-y: auto; flex: 1; min-height: 0; scrollbar-color: var(--faint) transparent; }
+  #feed:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .entry { position: relative; padding: 14px 24px 14px 44px; border-bottom: 1px solid var(--line);
+    animation: in .5s ease-out; }
+  .entry::before { content: ""; position: absolute; left: 22px; top: 21px; width: 9px; height: 9px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #fff 0 15%, var(--ok) 45%); }
+  .entry.err::before { background: radial-gradient(circle at 35% 30%, #fff 0 15%, var(--err) 45%); }
+  .entry.skip::before { background: var(--skip); }
+  .entry.skip { color: var(--muted); }
+  @keyframes in { from { opacity: 0; background: rgba(255, 196, 107, .08); } }
+  .entry .t { font: 500 17px/1.3 var(--serif); margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .entry.skip .t, .entry.err .t { font-style: italic; }
+  .entry .u { color: var(--faint); font-size: 13px; word-break: break-all; margin-top: 1px; }
+  .entry .m { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; color: var(--muted); margin-top: 8px; }
+  .entry .m b { color: var(--text); font-weight: 500; font-variant-numeric: lining-nums; }
+  .entry .m .bad b { color: var(--err); }
+  .entry .fields { display: grid; grid-template-columns: max-content 1fr; gap: 3px 12px;
+    font-size: 13px; margin: 8px 0 0; }
+  .entry dt { color: var(--accent); }
+  .entry dd { margin: 0; color: var(--text); overflow-wrap: anywhere; }
+  .entry .why { font-size: 13px; color: var(--muted); margin-top: 6px; }
+
+  .tip { position: absolute; pointer-events: none; display: none; max-width: 340px;
+    background: rgba(26, 31, 61, .94); border: 1px solid rgba(230, 227, 244, .16);
+    border-radius: 10px; padding: 10px 12px; font-size: 13px;
+    box-shadow: 0 12px 30px rgba(8, 10, 30, .45); backdrop-filter: blur(6px); }
+  .tip b { display: block; font: 500 16px/1.3 var(--serif); margin-bottom: 2px; }
+  .tip span { color: var(--faint); word-break: break-all; }
+  .tip em { display: block; font-style: normal; color: var(--muted); margin-top: 4px; }
+
+  .legend { position: absolute; left: 20px; bottom: 16px; font-size: 13px; color: var(--muted);
+    display: flex; gap: 18px; flex-wrap: wrap; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+  .legend .d-ok { background: radial-gradient(circle at 35% 30%, #fff 0 15%, var(--ok) 45%); }
+  .legend .d-fetch { background: radial-gradient(circle at 35% 30%, #fff 0 15%, var(--accent) 45%); }
+  .legend .d-queue { border: 1px solid var(--silk); opacity: .7; }
+  .legend .d-err { background: radial-gradient(circle at 35% 30%, #fff 0 15%, var(--err) 45%); }
+  .legend .d-skip { background: var(--skip); }
+
+  .empty { color: var(--muted); font-size: 14px; padding: 18px 24px; max-width: 32ch; }
+
   @media (max-width: 800px) {
     .app { grid-template-columns: 1fr; grid-template-rows: 55vh 45vh; }
     aside { border-left: 0; border-top: 1px solid var(--line); }
+    header { padding: 16px 16px 12px; }
+    h1 { font-size: 20px; }
+    .stats { padding: 0 16px 12px; gap: 8px; }
+    .stat b { font-size: 21px; }
+    .entry { padding: 12px 16px 12px 36px; }
+    .entry::before { left: 16px; top: 19px; }
+    .legend { left: 16px; gap: 12px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .dot, .entry { animation: none; }
   }
 </style>
 </head>
 <body>
 <div class="app">
   <div id="stage">
-    <canvas id="c"></canvas>
+    <canvas id="c" aria-label="Live map of the pages the spider has found"></canvas>
     <div class="tip" id="tip"></div>
     <div class="legend">
-      <span><i style="background:var(--ok)"></i>extracted</span>
-      <span><i style="background:var(--accent)"></i>fetching</span>
-      <span><i style="border:1px solid var(--silk)"></i>queued</span>
-      <span><i style="background:var(--err)"></i>error</span>
-      <span><i style="background:var(--skip)"></i>skipped</span>
+      <span><i class="d-ok"></i>Extracted</span>
+      <span><i class="d-fetch"></i>Fetching</span>
+      <span><i class="d-queue"></i>Queued</span>
+      <span><i class="d-err"></i>Error</span>
+      <span><i class="d-skip"></i>Skipped</span>
     </div>
   </div>
   <aside id="side">
     <header>
-      <h1><span class="dot"></span><span id="status">Spider is crawling…</span></h1>
-      <div class="now" id="now">Waiting for the crawler…</div>
+      <h1><span class="dot"></span><span id="status">Spinning the web</span></h1>
+      <div class="now" id="now">Waiting for the crawler to start</div>
     </header>
     <div class="stats">
-      <div class="stat"><b id="sPages">0</b><span>Pages</span></div>
-      <div class="stat"><b id="sQueued">0</b><span>Queued</span></div>
-      <div class="stat"><b id="sErrors">0</b><span>Errors</span></div>
-      <div class="stat"><b id="sTime">0s</b><span>Time</span></div>
+      <div class="stat"><b id="sPages">0</b><span>Pages read</span></div>
+      <div class="stat"><b id="sQueued">0</b><span>Waiting</span></div>
+      <div class="stat err zero" id="sErrBox"><b id="sErrors">0</b><span>Errors</span></div>
+      <div class="stat"><b id="sTime">0s</b><span>Elapsed</span></div>
     </div>
-    <div id="feed"><div class="empty">Extracted page data will appear here.</div></div>
+    <div id="feed" tabindex="0" aria-label="Pages read"><div class="empty">Each page shows up here with the data the spider pulled from it.</div></div>
   </aside>
 </div>
 <script>
@@ -154,7 +205,7 @@
       case 'fetch': {
         const n = addNode(ev.url, ev.parent, ev.depth);
         n.state = 'fetching';
-        $('now').textContent = 'Crawling → ' + ev.url;
+        $('now').textContent = 'Reading ' + ev.url;
         if (!spider.at) { spider.at = n; spider.x = n.x; spider.y = n.y; }
         else if (spider.at !== n) spider.path = route(spider.at, n);
         break;
@@ -181,7 +232,7 @@
         finished = true; tEnd = performance.now();
         $('side').classList.add('done');
         $('status').textContent = ev.stopped ? 'Stopped' : 'Crawl complete';
-        $('now').textContent = `${ev.pages} pages saved to ${ev.out}`;
+        $('now').textContent = `Saved ${ev.pages} pages to ${ev.out}`;
         es.close();
         break;
     }
@@ -194,20 +245,25 @@
     const feed = $('feed');
     const empty = feed.querySelector('.empty'); if (empty) empty.remove();
     const d = document.createElement('div');
-    d.className = 'card ' + kind;
+    d.className = 'entry ' + kind;
     let html;
     if (ev.type === 'visit') {
-      html = `<div class="t">${esc(ev.title || '(no title)')}</div><div class="u">${esc(ev.url)}</div>
-        <div class="m">${ev.status} · ${ev.word_count} words · ${ev.links} links · ${ev.images} images · depth ${ev.depth}</div>`;
-      if (ev.h1 && ev.h1.length && ev.h1[0] !== ev.title) html += `<div class="f"><i>h1</i>: ${esc(clip(ev.h1.join(' / '), 140))}</div>`;
-      if (ev.description) html += `<div class="f"><i>description</i>: ${esc(clip(ev.description, 160))}</div>`;
+      const num = v => Number(v ?? 0).toLocaleString();
+      html = `<h3 class="t">${esc(ev.title || 'Untitled page')}</h3><div class="u">${esc(ev.url)}</div>
+        <div class="m"><span${ev.status >= 400 ? ' class="bad"' : ''}>HTTP <b>${ev.status}</b></span>
+        <span><b>${num(ev.word_count)}</b> words</span><span><b>${num(ev.links)}</b> links</span>
+        <span><b>${num(ev.images)}</b> images</span><span>depth <b>${ev.depth}</b></span></div>`;
+      const rows = [];
+      if (ev.h1 && ev.h1.length && ev.h1[0] !== ev.title) rows.push(['h1', clip(ev.h1.join(' / '), 140)]);
+      if (ev.description) rows.push(['description', clip(ev.description, 160)]);
       for (const [k, v] of Object.entries(ev.fields || {})) {
-        const val = Array.isArray(v) ? `${v.length} found: ${v.slice(0, 3).join(' · ')}` : v;
-        html += `<div class="f"><i>${esc(k)}</i>: ${esc(clip(val, 220))}</div>`;
+        const val = Array.isArray(v) ? `${v.length} found: ${v.slice(0, 3).join(', ')}` : v;
+        rows.push([k, clip(val, 220)]);
       }
+      if (rows.length) html += `<dl class="fields">${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>`;
     } else {
-      html = `<div class="t">${ev.type === 'error' ? 'Error' : 'Skipped'}</div><div class="u">${esc(ev.url)}</div>
-        <div class="m">${esc(clip(ev.error || ev.reason, 160))}</div>`;
+      html = `<h3 class="t">${ev.type === 'error' ? 'Couldn\u2019t read this page' : 'Skipped'}</h3><div class="u">${esc(ev.url)}</div>
+        <div class="why">${esc(clip(ev.error || ev.reason, 160))}</div>`;
     }
     d.innerHTML = html;
     feed.prepend(d);
@@ -278,6 +334,20 @@
   }
   const nodeColor = n => ({ done: COL.ok, fetching: COL.accent, error: COL.err, skip: COL.skip }[n.state] || COL.silk);
 
+  // a bead of dew: soft halo, lit from the upper left, with a refracted glint low on the right
+  function drawDew(x, y, r, c) {
+    ctx.fillStyle = c; ctx.globalAlpha = 0.14;
+    ctx.beginPath(); ctx.arc(x, y, r * 2.1, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
+    const g = ctx.createRadialGradient(x - r * 0.38, y - r * 0.42, r * 0.05, x, y, r);
+    g.addColorStop(0, '#ffffff'); g.addColorStop(0.32, c); g.addColorStop(1, c);
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(20, 22, 50, .35)'; ctx.lineWidth = 1; ctx.stroke();
+    if (r > 4) {
+      ctx.strokeStyle = 'rgba(255, 255, 255, .45)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(x, y, r * 0.66, Math.PI * 0.1, Math.PI * 0.55); ctx.stroke();
+    }
+  }
+
   function drawSpider(x, y, ang, phase, moving, glow) {
     ctx.save(); ctx.translate(x, y); ctx.rotate(ang); ctx.scale(1.15, 1.15);
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
@@ -290,19 +360,19 @@
         const kx = ax + Math.cos(th) * 8, ky = ay + Math.sin(th) * 8;
         const fth = th + side * (i < 2 ? -0.65 : 0.65);
         const fx = kx + Math.cos(fth) * 9, fy = ky + Math.sin(fth) * 9;
-        ctx.strokeStyle = '#d9d4ff'; ctx.lineWidth = 1.7;
+        ctx.strokeStyle = COL.silk; ctx.lineWidth = 1.6;
         ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(kx, ky); ctx.lineTo(fx, fy); ctx.stroke();
       }
     }
     if (glow) { ctx.shadowColor = COL.accent; ctx.shadowBlur = 16; }
-    ctx.fillStyle = '#2b2442'; ctx.strokeStyle = '#d9d4ff'; ctx.lineWidth = 1.3;
+    ctx.fillStyle = '#121530'; ctx.strokeStyle = COL.silk; ctx.lineWidth = 1.2;
     ctx.beginPath(); ctx.ellipse(-7, 0, 7.5, 5.8, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     ctx.shadowBlur = 0;
     ctx.fillStyle = COL.accent;
     ctx.beginPath(); ctx.moveTo(-10, 0); ctx.lineTo(-7, -2.2); ctx.lineTo(-4, 0); ctx.lineTo(-7, 2.2); ctx.closePath(); ctx.fill();
-    ctx.fillStyle = '#2b2442';
+    ctx.fillStyle = '#121530';
     ctx.beginPath(); ctx.arc(2.5, 0, 4.2, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = '#ff5a5a';
+    ctx.fillStyle = COL.err;
     for (const e of [-1.5, 1.5]) { ctx.beginPath(); ctx.arc(5.4, e, 0.95, 0, Math.PI * 2); ctx.fill(); }
     ctx.restore();
   }
@@ -314,11 +384,14 @@
     // threads
     for (const e of edges) {
       const t = Math.min(1, (now - e.b.born) / 450);
-      const ax = sx(e.a.x), ay = sy(e.a.y), bx = sx(e.a.x + (e.b.x - e.a.x) * t), by = sy(e.a.y + (e.b.y - e.a.y) * t);
+      const ax = sx(e.a.x), ay = sy(e.a.y), bx = sx(e.b.x), by = sy(e.b.y);
+      const cx = (ax + bx) / 2, cy = (ay + by) / 2 + Math.hypot(bx - ax, by - ay) * 0.12;
+      const u = 1 - t;
+      const ex = u * u * ax + 2 * u * t * cx + t * t * bx, ey = u * u * ay + 2 * u * t * cy + t * t * by;
       ctx.strokeStyle = COL.silk;
-      ctx.globalAlpha = e.walked ? 0.6 : e.b.state === 'queued' ? 0.13 : 0.3;
-      ctx.lineWidth = e.walked ? 1.4 : 1;
-      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+      ctx.globalAlpha = e.walked ? 0.6 : e.b.state === 'queued' ? 0.12 : 0.28;
+      ctx.lineWidth = e.walked ? 1.3 : 0.9;
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.quadraticCurveTo(ax + (cx - ax) * t, ay + (cy - ay) * t, ex, ey); ctx.stroke();
     }
     ctx.globalAlpha = 1;
 
@@ -344,10 +417,12 @@
         ctx.beginPath(); ctx.arc(x, y, r + a * 26, 0, Math.PI * 2); ctx.stroke(); ctx.globalAlpha = 1;
       }
       if (n.state === 'queued') {
-        ctx.strokeStyle = COL.silk; ctx.globalAlpha = 0.55; ctx.lineWidth = 1;
+        ctx.strokeStyle = COL.silk; ctx.globalAlpha = 0.5; ctx.lineWidth = 1;
         ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke(); ctx.globalAlpha = 1;
+      } else if (n.state === 'skip') {
+        ctx.fillStyle = c; ctx.globalAlpha = 0.8; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
       } else {
-        ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+        drawDew(x, y, r, c);
       }
     }
 
@@ -360,14 +435,14 @@
     }
 
     // labels for the latest pages and the hovered node
-    ctx.font = '11px "Segoe UI", system-ui, sans-serif'; ctx.textBaseline = 'middle';
+    ctx.font = '500 12px "Alegreya Sans", "Segoe UI", system-ui, sans-serif'; ctx.textBaseline = 'middle';
     const labelled = new Set(recent); if (hover) labelled.add(hover);
     for (const n of labelled) {
       if (!n.data) continue;
       const text = clip(n.data.title || n.url, 34), x = sx(n.x) + nodeRadius(n) + 6, y = sy(n.y);
-      ctx.fillStyle = 'rgba(11,15,26,.75)';
-      ctx.fillRect(x - 3, y - 8, ctx.measureText(text).width + 6, 16);
-      ctx.fillStyle = n === hover ? '#fff' : COL.muted; ctx.fillText(text, x, y);
+      ctx.fillStyle = 'rgba(22, 27, 56, .78)';
+      ctx.beginPath(); ctx.roundRect(x - 5, y - 9, ctx.measureText(text).width + 10, 18, 9); ctx.fill();
+      ctx.fillStyle = n === hover ? '#fff' : COL.muted; ctx.fillText(text, x, y + 0.5);
     }
 
     if (spider.at) drawSpider(sx(spider.x), sy(spider.y), spider.ang, spider.phase, spider.path.length > 0, spider.wait > now);
@@ -382,9 +457,9 @@
     for (const n of list) { const d = (sx(n.x) - mx) ** 2 + (sy(n.y) - my) ** 2; if (d < best) { best = d; hover = n; } }
     if (!hover) { tip.style.display = 'none'; return; }
     const d = hover.data;
-    tip.innerHTML = `<b>${esc(d?.title || hover.state)}</b><span>${esc(hover.url)}</span>` +
-      (d && d.type === 'visit' ? `<br>${d.status} · ${d.word_count} words · ${d.links} links · depth ${d.depth}` : '') +
-      (d && (d.error || d.reason) ? `<br>${esc(clip(d.error || d.reason, 120))}` : '');
+    tip.innerHTML = `<b>${esc(d?.title || ({ queued: 'Queued', fetching: 'Fetching now', skip: 'Skipped', error: 'Error' }[hover.state] || hover.state))}</b><span>${esc(hover.url)}</span>` +
+      (d && d.type === 'visit' ? `<em>HTTP ${d.status}, ${Number(d.word_count).toLocaleString()} words, ${d.links} links, depth ${d.depth}</em>` : '') +
+      (d && (d.error || d.reason) ? `<em>${esc(clip(d.error || d.reason, 120))}</em>` : '');
     tip.style.display = 'block';
     tip.style.left = Math.min(mx + 14, W - tip.offsetWidth - 8) + 'px';
     tip.style.top = Math.min(my + 14, H - tip.offsetHeight - 8) + 'px';
@@ -398,7 +473,11 @@
     pump(now); physics(); updateCamera(); moveSpider(dt); draw(now);
     let q = 0; for (const n of list) if (n.state === 'queued') q++;
     $('sPages').textContent = stats.pages; $('sQueued').textContent = q; $('sErrors').textContent = stats.errors;
-    if (t0 !== null) $('sTime').textContent = Math.round(((tEnd ?? now) - t0) / 1000) + 's';
+    $('sErrBox').classList.toggle('zero', stats.errors === 0);
+    if (t0 !== null) {
+      const sec = Math.round(((tEnd ?? now) - t0) / 1000);
+      $('sTime').textContent = sec < 60 ? sec + 's' : Math.floor(sec / 60) + 'm ' + String(sec % 60).padStart(2, '0') + 's';
+    }
   }
   function raf(now) { step(now); requestAnimationFrame(raf); }
   requestAnimationFrame(raf);

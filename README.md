@@ -8,6 +8,7 @@ animation of a spider crawling the site in your browser.
 | File | Purpose |
 |---|---|
 | `spider.py` | The crawler (run this) |
+| `yahoo_history.py` | Daily closing prices for a stock from Yahoo Finance (uses the spider) |
 | `spider_live.html` | The live animation page — keep it in the same folder as `spider.py` |
 | `requirements.txt` | Python packages needed |
 
@@ -58,6 +59,32 @@ To find a selector for a site: open the page in Chrome, right-click the item
 you want → **Inspect**, then right-click the highlighted HTML → **Copy → Copy selector**
 (or use its class, e.g. `.price`).
 
+### Extract a table with `--table`
+
+`--table name=CSS-selector` turns an HTML table into rows, using the table's
+header cells as column names. Besides the normal output, each table is saved to
+`<out>.<name>.csv`:
+
+```
+python spider.py "https://finance.yahoo.com/quote/SPCX/history/" --depth 0 --table "history=table" --out spcx.json
+```
+
+That writes `spcx.history.csv` with Date, Open, High, Low, Close, Adj Close and Volume.
+
+### Stock closing prices from Yahoo Finance
+
+`yahoo_history.py` crawls Yahoo's Historical Data page for one symbol and saves
+the date and closing price for every trading day in the window:
+
+```
+python yahoo_history.py SPCX
+```
+
+- Default window is the last month; use `--months 3` for longer.
+- Saves `SPCX_close.csv` (change with `--out prices.csv`) and prints the prices
+  with the change, high and low.
+- Add `--live` to watch the spider fetch the page.
+
 ## 3. Live animation
 
 Add `--live` to any command. A browser tab opens showing the spider walking
@@ -73,8 +100,8 @@ python spider.py https://quotes.toscrape.com --live --select "quote=.quote .text
 - If port 8765 is busy, add `--port 8899` (and open http://127.0.0.1:8899/).
 - Hover over any dot to see that page's details.
 
-Colors: amber = fetching, green = extracted (bigger = more words),
-red = error, grey = skipped, hollow = waiting in queue.
+Colors: gold = fetching, aqua = extracted (bigger = more words),
+rose = error, grey = skipped, hollow = waiting in queue.
 
 ## All options
 
@@ -84,6 +111,7 @@ red = error, grey = skipped, hollow = waiting in queue.
 | `--depth N` | 2 | How many clicks away from the start page to go |
 | `--delay S` | 1.0 | Seconds to wait between requests (be polite) |
 | `--select NAME=CSS` | — | Extra field to extract; repeatable |
+| `--table NAME=CSS` | — | HTML table to extract as rows, also saved to `<out>.<NAME>.csv`; repeatable |
 | `--include REGEX` | — | Only follow links matching this pattern, e.g. `"/tag/"` |
 | `--exclude REGEX` | — | Skip links matching this pattern, e.g. `"login\|logout"` |
 | `--allow-external` | off | Also follow links to other websites |

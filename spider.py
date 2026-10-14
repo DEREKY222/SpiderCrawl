@@ -7,6 +7,7 @@ Usage examples:
     python spider.py https://example.com --select "price=.product .price" --select "name=h1"
     python spider.py https://example.com --format csv --out pages.csv
     python spider.py https://quotes.toscrape.com --live      # animated view in your browser
+    python spider.py "https://finance.yahoo.com/quote/SPCX/history/" --depth 0 --table "history=table"
 
 What it does:
   * Breadth-first crawl starting from one or more URLs
@@ -15,7 +16,8 @@ What it does:
   * Waits --delay seconds between requests
   * For each HTML page extracts: url, status, title, meta description,
     h1/h2 headings, visible text snippet, word count, links, images,
-    plus any custom CSS-selector fields you pass with --select
+    plus any custom CSS-selector fields you pass with --select, and HTML tables
+    you pass with --table (each also saved to its own CSV)
   * Writes JSON (default), JSONL, or CSV
   * --live opens a browser page showing an animated spider crawling the
     site in real time, with extracted data streaming into a side panel
@@ -54,9 +56,40 @@ def normalize(url):
                            path=path).geturl()
 
 
+def parse_table(table):
+    """Turn an HTML table into a list of {header: cell} dicts.
+
+    Header text is the first text in each <th>, so tooltips and icons inside headers are
+    ignored. Rows whose cell count doesn't match the header (e.g. a dividend note spanning
+    the whole row) are skipped.
+    """
+    if table is None:
+        return []
+    rows = table.find_all("tr")
+    header_row = next((r for r in rows if r.find("th")), None)
+    if header_row is None:
+        return []
+    headers = [next(th.stripped_strings, "") for th in header_row.find_all(["th", "td"])]
+    out = []
+    for tr in rows:
+        if tr is header_row:
+            continue
+        cells = [td.get_text(" ", strip=True) for td in tr.find_all("td")]
+        if len(cells) == len(headers):
+            out.append(dict(zip(headers, cells)))
+    return out
+
+
+def summarize_table(rows):
+    if not rows:
+        return "no rows found"
+    first = ", ".join(f"{k} {v}" for k, v in rows[0].items())
+    return f"{len(rows)} rows. First: {first}"
+
+
 class Spider:
     def __init__(self, start_urls, max_pages, max_depth, delay, allow_external,
-                 ignore_robots, include, exclude, selectors, timeout, user_agent):
+                 ignore_robots, include, exclude, selectors, timeout, user_agent, tables=None):
         self.start_urls = [normalize(u) for u in start_urls]
         self.allowed_hosts = {urlparse(u).netloc for u in self.start_urls}
         self.max_pages = max_pages
@@ -67,6 +100,7 @@ class Spider:
         self.include = re.compile(include) if include else None
         self.exclude = re.compile(exclude) if exclude else None
         self.selectors = selectors
+        self.tables = tables or {}
         self.timeout = timeout
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": user_agent})
@@ -140,6 +174,8 @@ class Spider:
             found = [el.get_text(" ", strip=True) for el in soup.select(css)]
             record[name] = found[0] if len(found) == 1 else found
 
+        for name, css in self.tables.items():
+            record[name] = parse_table(soup.select_one(css))
 
         return record, links
 
@@ -190,7 +226,8 @@ class Spider:
                 "links": len(record["links"]),
                 "images": len(record["images"]),
                 "depth": depth,
-                "fields": {name: record[name] for name in self.selectors},
+                "fields": {**{name: record[name] for name in self.selectors},
+                           **{name: summarize_table(record[name]) for name in self.tables}},
             })
 
             if depth < self.max_depth:
@@ -289,11 +326,28 @@ def save(results, path, fmt):
                             for k, v in r.items()})
 
 
-def parse_selectors(items):
+def save_tables(results, tables, out):
+    """Write each --table to <out stem>.<name>.csv; adds a url column when several pages had it."""
+    paths = []
+    for name in tables:
+        pages = [r for r in results if r.get(name)]
+        rows = [({"url": r["url"]} if len(pages) > 1 else {}) | row for r in pages for row in r[name]]
+        if not rows:
+            continue
+        path = Path(out).with_suffix(f".{name}.csv")
+        with open(path, "w", encoding="utf-8-sig", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=list(rows[0]))
+            w.writeheader()
+            w.writerows(rows)
+        paths.append((path, len(rows)))
+    return paths
+
+
+def parse_selectors(items, flag="--select"):
     out = {}
     for item in items or []:
         if "=" not in item:
-            sys.exit(f"--select must look like name=css-selector, got: {item}")
+            sys.exit(f"{flag} must look like name=css-selector, got: {item}")
         name, css = item.split("=", 1)
         out[name.strip()] = css.strip()
     return out
@@ -311,6 +365,8 @@ def main():
     p.add_argument("--exclude", help="Skip URLs matching this regex")
     p.add_argument("--select", action="append", metavar="NAME=CSS",
                    help="Extra field from a CSS selector; repeatable")
+    p.add_argument("--table", action="append", metavar="NAME=CSS",
+                   help="Extract an HTML table as rows (also saved to <out>.<NAME>.csv); repeatable")
     p.add_argument("--timeout", type=float, default=15.0)
     p.add_argument("--user-agent", default=DEFAULT_UA)
     p.add_argument("--format", choices=["json", "jsonl", "csv"], default="json")
@@ -332,6 +388,7 @@ def main():
         selectors=parse_selectors(args.select),
         timeout=args.timeout,
         user_agent=args.user_agent,
+        tables=parse_selectors(args.table, "--table"),
     )
     out = args.out or f"results.{args.format}"
 
@@ -353,6 +410,8 @@ def main():
         print("\nStopped by user - saving what was collected so far.", file=sys.stderr)
 
     save(results, out, args.format)
+    for path, n in save_tables(results, spider.tables, out):
+        print(f"Table: {n} rows -> {path}", file=sys.stderr)
     spider.emit({"type": "done", "pages": len(results), "out": out, "stopped": stopped})
     print(f"\nDone: {len(results)} pages -> {out}", file=sys.stderr)
 
